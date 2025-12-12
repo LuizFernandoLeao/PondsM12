@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aim Trainer VR</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+</head>
+<body>
+    <a-scene renderer="sortObjects: true">
+        <a-assets>
+            <audio id="sound-headshot" src="cs-go-headshot-sound.mp3"></audio>
+            <audio id="sound-body" src="gunshotjbudden.mp3"></audio>
+        </a-assets>
+
+        <!-- Rig para VR -->
+        <a-entity id="rig">
+            <!-- Câmera com UI -->
+            <a-camera position="0 1.6 0">
+                <!-- Cursor (Mira - Desktop) -->
+                <a-entity 
+                    cursor="fuse: false; rayOrigin: mouse"
+                    position="0 0 -1"
+                    material="color: #00FF00; shader: flat"
+                    raycaster="objects: .alvo">
+                </a-entity>
+
+            <!-- HUD Container -->
+            <a-entity position="0 -1.4 -1">
+                <!-- Placar -->
+                <a-text 
+                    id="placar"
+                    value="Score: 0"
+                    position="-0.9 0.8 0"
+                    align="left"
+                    width="3"
+                    color="black">
+                </a-text>
+
+                <!-- Cronômetro -->
+                <a-text 
+                    id="timer"
+                    value="Tempo: 0.00s"
+                    position="0.8 0.8 0"
+                    align="right"
+                    width="3"
+                    color="black">
+                </a-text>
+                
+                <!-- Contador de Alvos -->
+                <a-text 
+                    id="contador"
+                    value="Alvos: 0 / 10"
+                    position="0 0.9 0"
+                    align="center"
+                    width="3"
+                    color="#AAAAAA">
+                </a-text>
+            </a-entity>
+
+            <!-- Mensagem de Final (inicialmente invisível) -->
+            <a-text 
+                id="mensagem-final"
+                value=""
+                position="0 0.5 -2"
+                align="center"
+                width="8"
+                color="#FFD700"
+                visible="false"
+                material="shader: flat; depthTest: false">
+            </a-text>
+            </a-camera>
+            
+            <!-- Controles Meta Quest 3 -->
+            <a-entity laser-controls="hand: right" raycaster="objects: .alvo; far: 100" line="color: red; opacity: 0.7; width: 5"></a-entity>
+            <a-entity laser-controls="hand: left" raycaster="objects: .alvo; far: 100" line="color: red; opacity: 0.7; width: 5"></a-entity>
+        </a-entity>
+
+        <!-- Container dos alvos -->
+        <a-entity id="alvos"></a-entity>
+
+        <!-- Ambiente -->
+        <a-plane 
+            position="0 0 -4" 
+            rotation="-90 0 0" 
+            width="30" 
+            height="30" 
+            color="#7BC8A4"
+            material="roughness: 1; metalness: 0">
+        </a-plane>
+        
+        <!-- Grid no chão para referência de espaço -->
+        <a-grid helper geometry="primitive: plane; width: 30; height: 30" rotation="-90 0 0" material="src: url(https://cdn.aframe.io/a-painter/images/floor.jpg); repeat: 30 30; transparent: true; opacity: 0.2"></a-grid>
+
+        <!-- Céu -->
+        <a-sky color="#ECECEC"></a-sky>
+
+        <!-- Iluminação -->
+        <a-light type="ambient" color="#BBB"></a-light>
+        <a-light type="directional" position="1 4 1" intensity="1.0" castShadow="true"></a-light>
+    </a-scene>
+
+    <script>
+        let score = 0;
+        let targetsEliminated = 0;
+        let gameActive = true;
+        let startTime = null;
+        let timerInterval = null;
+        const maxTargets = 10;
+
+        const placarEl = document.querySelector('#placar');
+        const timerEl = document.querySelector('#timer');
+        const contadorEl = document.querySelector('#contador');
+        const mensagemFinalEl = document.querySelector('#mensagem-final');
+        const alvosContainer = document.querySelector('#alvos');
+
+        // Inicia o jogo
+        function initGame() {
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 10); // Atualiza a cada 10ms
+            
+            // Cria 3 alvos iniciais
+            for (let i = 0; i < 3; i++) {
+                createTarget();
+            }
+        }
+
+        function updateTimer() {
+            if (!gameActive) return;
+            const currentTime = Date.now();
+            const timeElapsed = (currentTime - startTime) / 1000;
+            timerEl.setAttribute('value', `Tempo: ${timeElapsed.toFixed(2)}s`);
+        }
+
+        function createTarget() {
+            if (!gameActive) return;
+
+            // Posição aleatória (frente ao jogador)
+            // X: -5 a 5
+            // Y: 0.5 a 3 (altura variada)
+            // Z: -3 a -8 (profundidade)
+            const x = (Math.random() - 0.5) * 10;
+            const y = 0.5 + Math.random() * 2.5;
+            const z = -3 - Math.random() * 5;
+
+            // Container Principal
+            const container = document.createElement('a-entity');
+            container.setAttribute('position', `${x} ${y} ${z}`);
+            
+            // Animação de flutuar
+            container.setAttribute('animation', `property: position; to: ${x} ${y + 0.3} ${z}; dir: alternate; loop: true; dur: ${1500 + Math.random() * 1000}; easing: easeInOutSine`);
+
+            // Modelo Visual (Snorlax)
+            const model = document.createElement('a-entity');
+            model.setAttribute('gltf-model', '143.glb');
+            model.setAttribute('scale', '0.05 0.05 0.05');
+            // Rotacionar para encarar o jogador (aproximadamente)
+            model.setAttribute('rotation', '0 0 0'); 
+            // Animação de rotação suave
+            model.setAttribute('animation__rot', 'property: rotation; to: 0 360 0; loop: true; dur: 6000; easing: linear');
+            container.appendChild(model);
+
+            // Hitbox Unificado (Cobre todo o Snorlax)
+            // Usamos um cilindro invisível que engloba corpo e cabeça
+            const hitbox = document.createElement('a-entity');
+            hitbox.setAttribute('geometry', 'primitive: cylinder; height: 0.9; radius: 0.35');
+            hitbox.setAttribute('material', 'opacity: 0; transparent: true');
+            hitbox.setAttribute('class', 'alvo');
+            hitbox.setAttribute('position', '0 0.45 0'); // Centralizado verticalmente
+            
+            // Evento de clique (disparado pelo fuse)
+            hitbox.addEventListener('click', (evt) => {
+                // Calcula se foi headshot baseado na altura do impacto
+                const intersection = evt.detail.intersection;
+                if (!intersection) return;
+
+                // Converte o ponto de impacto para o espaço local do hitbox
+                const localPoint = hitbox.object3D.worldToLocal(intersection.point.clone());
+                
+                // O cilindro tem altura 0.9 e está em y=0.45 (relativo ao container)
+                // No espaço local do cilindro, y vai de -0.45 a +0.45
+                // A cabeça está no topo. Vamos definir um threshold.
+                // Se y > 0.2 (parte superior), consideramos headshot
+                
+                const isHeadshot = localPoint.y > 0.2;
+                handleHit(container, isHeadshot ? 'head' : 'body');
+            });
+
+            container.appendChild(hitbox);
+
+            alvosContainer.appendChild(container);
+        }
+
+        function handleHit(targetEntity, type) {
+            if (!gameActive) return;
+
+            // Remove o alvo
+            if (targetEntity.parentNode) {
+                targetEntity.parentNode.removeChild(targetEntity);
+            }
+
+            // Pontuação e Som
+            let points = 0;
+            if (type === 'head') {
+                points = 200;
+                console.log("Headshot!");
+                playSound('sound-headshot');
+            } else {
+                points = 100;
+                console.log("Body hit");
+                playSound('sound-body');
+            }
+            score += points;
+            targetsEliminated++;
+
+            // Atualiza UI
+            placarEl.setAttribute('value', `Score: ${score}`);
+            contadorEl.setAttribute('value', `Alvos: ${targetsEliminated} / ${maxTargets}`);
+
+            // Verifica fim de jogo
+            if (targetsEliminated >= maxTargets) {
+                endGame();
+            } else {
+                // Respawn imediato para manter o fluxo
+                createTarget();
+            }
+        }
+
+        function playSound(id) {
+            const sound = document.querySelector('#' + id);
+            if (sound) {
+                sound.currentTime = 0;
+                sound.play();
+            }
+        }
+
+        function endGame() {
+            gameActive = false;
+            clearInterval(timerInterval);
+            
+            const finalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+            
+            // Limpa alvos restantes
+            alvosContainer.innerHTML = '';
+
+            // Mostra mensagem final
+            mensagemFinalEl.setAttribute('value', `FIM DE JOGO!\nTempo: ${finalTime}s\nScore Final: ${score}\nHeadshots valem o dobro!`);
+            mensagemFinalEl.setAttribute('visible', 'true');
+            
+            // Oculta outros textos para limpar a tela
+            contadorEl.setAttribute('visible', 'false');
+        }
+
+        // Inicia o jogo quando a cena carregar
+        document.querySelector('a-scene').addEventListener('loaded', initGame);
+
+
+    </script>
+</body>
+</html>
